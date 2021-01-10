@@ -103,6 +103,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         mapped_at_creation: true,
     });
     {
+        // TODO: get_mapped_range_mut API not in the wgpu-rs web backend yet
         let mut view = data_buffer.slice(..).get_mapped_range_mut();
         let float_view = unsafe {
             std::slice::from_raw_parts_mut(view.as_mut_ptr() as *mut f32, vertex_data.len())
