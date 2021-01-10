@@ -1,15 +1,12 @@
-use futures::executor::block_on;
 use std::borrow::Cow;
 use wgpu;
 use winit::{
     event::{Event, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
+    window::{Window, WindowBuilder},
 };
 
-async fn run() {
-    let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+async fn run(event_loop: EventLoop<()>, window: Window) {
     let window_size = window.inner_size();
     let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
     let surface = unsafe { instance.create_surface(&window) };
@@ -95,23 +92,22 @@ async fn run() {
         Cow::Borrowed(&triangle_frag_spv),
     ));
 
+    let vertex_data: [f32; 24] = [
+        1.0, -1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, -1.0, -1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0,
+        1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0,
+    ];
     let data_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 3 * 2 * 4 * 4,
+        size: (vertex_data.len() * 4) as u64,
         usage: wgpu::BufferUsage::VERTEX,
         mapped_at_creation: true,
     });
     {
         let mut view = data_buffer.slice(..).get_mapped_range_mut();
-        // Any utility for making this view creation nicer besides the copy buffer util
-        // in wgpu?
-        let float_view =
-            unsafe { std::slice::from_raw_parts_mut(view.as_mut_ptr() as *mut f32, 3 * 2 * 4) };
-        let data: [f32; 24] = [
-            1.0, -1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, -1.0, -1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0,
-            1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0,
-        ];
-        float_view.copy_from_slice(&data)
+        let float_view = unsafe {
+            std::slice::from_raw_parts_mut(view.as_mut_ptr() as *mut f32, vertex_data.len())
+        };
+        float_view.copy_from_slice(&vertex_data)
     }
     data_buffer.unmap();
 
@@ -234,5 +230,26 @@ async fn run() {
 }
 
 fn main() {
-    block_on(run());
+    let event_loop = EventLoop::new();
+    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        futures::executor::block_on(run(event_loop, window));
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+        console_log::init().expect("Failed to initialize logger");
+        use winit::platform::web::WindowExtWebSys;
+        // On wasm, append the canvas to the document body
+        web_sys::window()
+            .and_then(|win| win.document())
+            .and_then(|doc| doc.body())
+            .and_then(|body| {
+                body.append_child(&web_sys::Element::from(window.canvas()))
+                    .ok()
+            })
+            .expect("Failed to append canvas to body");
+        wasm_bindgen_futures::spawn_local(run(event_loop, window));
+    }
 }
