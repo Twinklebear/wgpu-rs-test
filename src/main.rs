@@ -21,9 +21,9 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     let (device, queue) = adapter
         .request_device(
             &wgpu::DeviceDescriptor {
+                label: None,
                 features: wgpu::Features::empty(),
                 limits: wgpu::Limits::default(),
-                shader_validation: false,
             },
             None,
         )
@@ -85,12 +85,16 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         0x0000000b, 0x0003003e, 0x00000009, 0x0000000c, 0x000100fd, 0x00010038,
     ];
 
-    let vertex_module = device.create_shader_module(wgpu::ShaderModuleSource::SpirV(
-        Cow::Borrowed(&triangle_vert_spv),
-    ));
-    let fragment_module = device.create_shader_module(wgpu::ShaderModuleSource::SpirV(
-        Cow::Borrowed(&triangle_frag_spv),
-    ));
+    let vertex_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        label: None,
+        source: wgpu::ShaderSource::SpirV(Cow::Borrowed(&triangle_vert_spv)),
+        flags: wgpu::ShaderFlags::empty(),
+    });
+    let fragment_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        label: None,
+        source: wgpu::ShaderSource::SpirV(Cow::Borrowed(&triangle_frag_spv)),
+        flags: wgpu::ShaderFlags::empty(),
+    });
 
     let vertex_data: [f32; 24] = [
         1.0, -1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, -1.0, -1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0,
@@ -113,20 +117,20 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     data_buffer.unmap();
 
     let vertex_attrib_descs = [
-        wgpu::VertexAttributeDescriptor {
+        wgpu::VertexAttribute {
             offset: 0,
             format: wgpu::VertexFormat::Float4,
             shader_location: 0,
         },
-        wgpu::VertexAttributeDescriptor {
+        wgpu::VertexAttribute {
             offset: 4 * 4,
             format: wgpu::VertexFormat::Float4,
             shader_location: 1,
         },
     ];
 
-    let vertex_buffer_descs = [wgpu::VertexBufferDescriptor {
-        stride: 2 * 4 * 4,
+    let vertex_buffer_layouts = [wgpu::VertexBufferLayout {
+        array_stride: 2 * 4 * 4,
         step_mode: wgpu::InputStepMode::Vertex,
         attributes: &vertex_attrib_descs,
     }];
@@ -141,7 +145,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     let mut swap_chain = device.create_swap_chain(
         &surface,
         &wgpu::SwapChainDescriptor {
-            usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+            usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
             format: swap_chain_format,
             width: window_size.width,
             height: window_size.height,
@@ -152,31 +156,38 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: None,
         layout: Some(&pipeline_layout),
-        vertex_stage: wgpu::ProgrammableStageDescriptor {
+        vertex: wgpu::VertexState {
             module: &vertex_module,
             entry_point: "main",
+            buffers: &vertex_buffer_layouts,
         },
-        fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+        primitive: wgpu::PrimitiveState {
+            // Note: it's not possible to set a "none" strip index format,
+            // which raises an error in Chrome Canary b/c when using non-strip
+            // topologies, the index format must be none. However, wgpu-rs
+            // instead defaults this to uint16, leading to an invalid state.
+            topology: wgpu::PrimitiveTopology::TriangleStrip,
+            strip_index_format: Some(wgpu::IndexFormat::Uint16),
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: wgpu::CullMode::None,
+            polygon_mode: wgpu::PolygonMode::Fill,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        fragment: Some(wgpu::FragmentState {
             module: &fragment_module,
             entry_point: "main",
+            targets: &[wgpu::ColorTargetState {
+                format: swap_chain_format,
+                alpha_blend: wgpu::BlendState::REPLACE,
+                color_blend: wgpu::BlendState::REPLACE,
+                write_mask: wgpu::ColorWrite::ALL,
+            }],
         }),
-        rasterization_state: None,
-        primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-        color_states: &[wgpu::ColorStateDescriptor {
-            format: swap_chain_format,
-            alpha_blend: wgpu::BlendDescriptor::REPLACE,
-            color_blend: wgpu::BlendDescriptor::REPLACE,
-            write_mask: wgpu::ColorWrite::ALL,
-        }],
-        depth_stencil_state: None,
-        vertex_state: wgpu::VertexStateDescriptor {
-            // Note: can use None in later relase of wgpu, since we don't use an index buffer
-            index_format: wgpu::IndexFormat::Uint16,
-            vertex_buffers: &vertex_buffer_descs,
-        },
-        sample_count: 1,
-        sample_mask: !0,
-        alpha_to_coverage_enabled: false,
     });
 
     let clear_color = wgpu::Color {
@@ -208,6 +219,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                     device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                 {
                     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: None,
                         color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                             attachment: &frame.view,
                             resolve_target: None,

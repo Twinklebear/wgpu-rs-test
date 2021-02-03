@@ -5,13 +5,13 @@ authors = ["Will Usher <will.usher@hey.com>"]
 edition = "2018"
 
 [dependencies]
-wgpu = "0.6"
+wgpu = "0.7"
 winit = { version = "0.24", features = ["web-sys"] }
 futures = "0.3"
 
 [target.wasm32-unknown-unknown.dependencies]
 console_error_panic_hook = "0.1.6"
 console_log = "0.2.0"
-web-sys = "0.3.44"
+web-sys = "0.3.46"
 wasm-bindgen-futures = "0.4.19"
 
