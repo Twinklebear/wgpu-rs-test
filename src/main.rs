@@ -107,7 +107,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         mapped_at_creation: true,
     });
     {
-        // TODO: get_mapped_range_mut API not in the wgpu-rs web backend yet
         let mut view = data_buffer.slice(..).get_mapped_range_mut();
         let float_view = unsafe {
             std::slice::from_raw_parts_mut(view.as_mut_ptr() as *mut f32, vertex_data.len())
@@ -115,6 +114,22 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         float_view.copy_from_slice(&vertex_data)
     }
     data_buffer.unmap();
+
+    let index_data: [u16; 3] = [0, 1, 2];
+    let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: (index_data.len() * 4) as u64,
+        usage: wgpu::BufferUsage::INDEX,
+        mapped_at_creation: true,
+    });
+    {
+        let mut view = index_buffer.slice(..).get_mapped_range_mut();
+        let u16_view = unsafe {
+            std::slice::from_raw_parts_mut(view.as_mut_ptr() as *mut u16, index_data.len())
+        };
+        u16_view.copy_from_slice(&index_data)
+    }
+    index_buffer.unmap();
 
     let vertex_attrib_descs = [
         wgpu::VertexAttribute {
@@ -142,7 +157,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     });
 
     let swap_chain_format = wgpu::TextureFormat::Bgra8Unorm;
-    let mut swap_chain = device.create_swap_chain(
+    let swap_chain = device.create_swap_chain(
         &surface,
         &wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
@@ -233,7 +248,19 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
 
                     render_pass.set_pipeline(&render_pipeline);
                     render_pass.set_vertex_buffer(0, data_buffer.slice(..));
-                    render_pass.draw(0..3, 0..1);
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        // Note: also bug in wgpu-rs set_index_buffer or web sys not passing
+                        // the right index type
+                        render_pass
+                            .set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                        render_pass.draw_indexed(0..3, 0, 0..1);
+                    }
+                    // This is actually kind of wrong to do, but it kind of works out anyways
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        render_pass.draw(0..3, 0..1);
+                    }
                 }
                 queue.submit(Some(encoder.finish()));
             }
