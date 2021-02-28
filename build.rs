@@ -17,7 +17,6 @@ fn main() {
     writer.write_all(b"mod shaders {\n").unwrap();
 
     for s in shaders.iter() {
-        // TODO: needs absolute path?
         println!("cargo:rerun-if-changed={}", s.display());
         let shader_code = fs::read_to_string(s).expect(&format!("Failed to read {}", s.display()));
         let compile_result = compiler
