@@ -1,8 +1,7 @@
 extern crate shaderc;
 
 use std::fs::{self, File};
-use std::io::BufWriter;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::{env, process};
 
