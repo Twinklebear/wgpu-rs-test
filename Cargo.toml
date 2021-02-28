@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Will Usher <will.usher@hey.com>"]
 edition = "2018"
 
+[build-dependencies]
+shaderc = "0.7"
+
 [dependencies]
 wgpu = "0.7"
 winit = { version = "0.24", features = ["web-sys"] }
