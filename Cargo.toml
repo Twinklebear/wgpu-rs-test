@@ -1,20 +1,17 @@
 [package]
 name = "wgpu-test"
 version = "0.1.0"
-authors = ["Will Usher <will.usher@hey.com>"]
-edition = "2018"
-
-[build-dependencies]
-shaderc = "0.7"
+authors = ["Will Usher <will@willusher.io>"]
+edition = "2021"
 
 [dependencies]
-wgpu = "0.7"
-winit = { version = "0.24", features = ["web-sys"] }
+wgpu = "0.12"
+winit = "0.26"
 futures = "0.3"
 
 [target.wasm32-unknown-unknown.dependencies]
-console_error_panic_hook = "0.1.6"
-console_log = "0.2.0"
-web-sys = "0.3.46"
-wasm-bindgen-futures = "0.4.19"
+console_error_panic_hook = "0.1"
+console_log = "0.2"
+web-sys = "0.3"
+wasm-bindgen-futures = "0.4"
 

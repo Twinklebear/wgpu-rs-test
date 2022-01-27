@@ -6,16 +6,39 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-include!(concat!(env!("OUT_DIR"), "/embedded_shaders.rs"));
+const WGSL_SHADERS: &str = "
+struct VertexInput {
+    [[location(0)]] position: vec4<f32>;
+    [[location(1)]] color: vec4<f32>;
+};
+struct VertexOutput {
+    [[builtin(position)]] position: vec4<f32>;
+    [[location(0)]] color: vec4<f32>;
+};
+
+[[stage(vertex)]]
+fn vertex_main(vert: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    out.color = vert.color;
+    out.position = vert.position;
+    return out;
+};
+
+[[stage(fragment)]]
+fn fragment_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
+    return vec4<f32>(in.color);
+}
+";
 
 async fn run(event_loop: EventLoop<()>, window: Window) {
     let window_size = window.inner_size();
-    let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
+    let instance = wgpu::Instance::new(wgpu::Backends::PRIMARY);
     let surface = unsafe { instance.create_surface(&window) };
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::default(),
             compatible_surface: Some(&surface),
+            force_fallback_adapter: false,
         })
         .await
         .expect("Failed to find a WebGPU adapter");
@@ -34,13 +57,11 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
 
     let vertex_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
         label: None,
-        source: wgpu::ShaderSource::SpirV(Cow::Borrowed(&shaders::TRIANGLE_VERT)),
-        flags: wgpu::ShaderFlags::empty(),
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(WGSL_SHADERS)),
     });
     let fragment_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
         label: None,
-        source: wgpu::ShaderSource::SpirV(Cow::Borrowed(&shaders::TRIANGLE_FRAG)),
-        flags: wgpu::ShaderFlags::empty(),
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(WGSL_SHADERS)),
     });
 
     let vertex_data: [f32; 24] = [
@@ -50,7 +71,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     let data_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
         size: (vertex_data.len() * 4) as u64,
-        usage: wgpu::BufferUsage::VERTEX,
+        usage: wgpu::BufferUsages::VERTEX,
         mapped_at_creation: true,
     });
     {
@@ -66,7 +87,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
         size: (index_data.len() * 4) as u64,
-        usage: wgpu::BufferUsage::INDEX,
+        usage: wgpu::BufferUsages::INDEX,
         mapped_at_creation: true,
     });
     {
@@ -81,19 +102,19 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     let vertex_attrib_descs = [
         wgpu::VertexAttribute {
             offset: 0,
-            format: wgpu::VertexFormat::Float4,
+            format: wgpu::VertexFormat::Float32x4,
             shader_location: 0,
         },
         wgpu::VertexAttribute {
             offset: 4 * 4,
-            format: wgpu::VertexFormat::Float4,
+            format: wgpu::VertexFormat::Float32x4,
             shader_location: 1,
         },
     ];
 
     let vertex_buffer_layouts = [wgpu::VertexBufferLayout {
         array_stride: 2 * 4 * 4,
-        step_mode: wgpu::InputStepMode::Vertex,
+        step_mode: wgpu::VertexStepMode::Vertex,
         attributes: &vertex_attrib_descs,
     }];
 
@@ -104,10 +125,11 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     });
 
     let swap_chain_format = wgpu::TextureFormat::Bgra8Unorm;
-    let swap_chain = device.create_swap_chain(
-        &surface,
-        &wgpu::SwapChainDescriptor {
-            usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
+
+    surface.configure(
+        &device,
+        &wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: swap_chain_format,
             width: window_size.width,
             height: window_size.height,
@@ -120,7 +142,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         layout: Some(&pipeline_layout),
         vertex: wgpu::VertexState {
             module: &vertex_module,
-            entry_point: "main",
+            entry_point: "vertex_main",
             buffers: &vertex_buffer_layouts,
         },
         primitive: wgpu::PrimitiveState {
@@ -131,8 +153,10 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             topology: wgpu::PrimitiveTopology::TriangleStrip,
             strip_index_format: Some(wgpu::IndexFormat::Uint16),
             front_face: wgpu::FrontFace::Ccw,
-            cull_mode: wgpu::CullMode::None,
+            cull_mode: None,
             polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+            unclipped_depth: false,
         },
         depth_stencil: None,
         multisample: wgpu::MultisampleState {
@@ -142,14 +166,14 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         },
         fragment: Some(wgpu::FragmentState {
             module: &fragment_module,
-            entry_point: "main",
+            entry_point: "fragment_main",
             targets: &[wgpu::ColorTargetState {
                 format: swap_chain_format,
-                alpha_blend: wgpu::BlendState::REPLACE,
-                color_blend: wgpu::BlendState::REPLACE,
-                write_mask: wgpu::ColorWrite::ALL,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
             }],
         }),
+        multiview: None,
     });
 
     let clear_color = wgpu::Color {
@@ -173,17 +197,20 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 _ => (),
             },
             Event::MainEventsCleared => {
-                let frame = swap_chain
-                    .get_current_frame()
-                    .expect("Failed to get swapchain frame")
-                    .output;
+                let frame = surface
+                    .get_current_texture()
+                    .expect("Failed to get surface output texture");
+                let render_target_view = frame
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
+
                 let mut encoder =
                     device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                 {
                     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: None,
-                        color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                            attachment: &frame.view,
+                        color_attachments: &[wgpu::RenderPassColorAttachment {
+                            view: &render_target_view,
                             resolve_target: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Clear(clear_color),
@@ -210,6 +237,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                     }
                 }
                 queue.submit(Some(encoder.finish()));
+                frame.present();
             }
             _ => (),
         }
